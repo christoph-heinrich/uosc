@@ -1371,10 +1371,10 @@ end
 -- STATE UPDATES
 
 function update_display_dimensions()
-	local o = mp.get_property_native('osd-dimensions')
-	display.width = o.w
-	display.height = o.h
-	display.aspect = o.aspect
+	local width, height, aspect = mp.get_osd_size()
+	display.width = width
+	display.height = height
+	display.aspect = aspect
 
 	-- Tell elements about this
 	elements:trigger('display_change')
