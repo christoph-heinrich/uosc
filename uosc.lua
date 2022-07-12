@@ -1674,15 +1674,45 @@ function render_timeline(this)
 	end
 
 	if (this.proximity_raw == 0 or this.pressed) and not (elements.speed and elements.speed.dragging) then
-		-- Hovered time
+		-- Hovered time and chapter
 		local hovered_seconds = state.duration * (cursor.x / display.width)
-		local box_half_width_guesstimate = (this.font_size * 4.2) / 2
+		local chapter_title = ''
+		local chapter_time = 0
+		if state.chapter_ranges then
+			for _,chapter_range in pairs(state.chapter_ranges) do
+				-- sould be in chronological order from here
+				for j = #chapter_range.ranges, 1, -1 do
+					local range = chapter_range.ranges[j]
+					for _, chapter in ipairs({range['end'], range['start']}) do
+						if hovered_seconds >= chapter.time and chapter.time > chapter_time then
+							chapter_title = chapter.title
+							chapter_time = chapter.time
+							goto HOVER_CHAPTER_CONTINUE
+						end
+					end
+				end
+				::HOVER_CHAPTER_CONTINUE::
+			end
+		end
+		if (state.chapters and options.chapters ~= 'none') then
+			for i = #state.chapters, 1, -1 do
+				local chapter = state.chapters[i]
+				if hovered_seconds >= chapter.time and chapter.time > chapter_time then
+					chapter_title = chapter.title
+					break
+				end
+			end
+		end
+		local time_formatted = mp.format_time(hovered_seconds)
+		local text_len = math.max(time_formatted:len(), chapter_title:len())
+		local box_half_width_estimate = text_width_estimate(text_len, this.font_size) / 2
 		ass:new_event()
 		ass:append('{\\blur0\\bord1\\shad0\\1c&H'..options.color_background_text..'\\3c&H'..options.color_background..'\\fn'..config.font..'\\fs'..this.font_size..bold_tag..'')
 		ass:append(ass_opacity(math.min(options.timeline_opacity + 0.1, 1)))
-		ass:pos(math.min(math.max(cursor.x, box_half_width_guesstimate), display.width - box_half_width_guesstimate), fay)
+		ass:pos(math.min(math.max(cursor.x, box_half_width_estimate), display.width - box_half_width_estimate), fay)
 		ass:an(2)
-		ass:append(mp.format_time(hovered_seconds))
+		ass:append(chapter_title .. '\\N')
+		ass:append(time_formatted)
 
 		-- Cursor line
 		ass:new_event()
@@ -2762,7 +2792,7 @@ for _, definition in ipairs(split(options.chapter_ranges, ' *,+ *')) do
 					if is_end then
 						if current_range == nil and uses_bof and not bof_used then
 							bof_used = true
-							start_range({time = 0})
+							start_range({time = 0, title = ''})
 						end
 						if current_range ~= nil then
 							end_range(chapter)
@@ -2783,7 +2813,7 @@ for _, definition in ipairs(split(options.chapter_ranges, ' *,+ *')) do
 
 		-- If there is an unfinished range and range type accepts eof, use it
 		if current_range ~= nil and uses_eof then
-			end_range({time = state.duration or infinity})
+			end_range({time = state.duration or infinity, title = ''})
 		end
 	end
 
