@@ -1615,7 +1615,9 @@ function render_timeline(this)
 
 			if state.chapters ~= nil then
 				for i, chapter in ipairs(state.chapters) do
-					draw_chapter(chapter.time)
+					if not chapter._uosc_used_as_range_point then
+						draw_chapter(chapter.time)
+					end
 				end
 			end
 
@@ -1677,41 +1679,29 @@ function render_timeline(this)
 		-- Hovered time and chapter
 		local hovered_seconds = state.duration * (cursor.x / display.width)
 		local chapter_title = ''
-		local chapter_time = 0
-		if state.chapter_ranges then
-			for _,chapter_range in pairs(state.chapter_ranges) do
-				-- sould be in chronological order from here
-				for j = #chapter_range.ranges, 1, -1 do
-					local range = chapter_range.ranges[j]
-					for _, chapter in ipairs({range['end'], range['start']}) do
-						if hovered_seconds >= chapter.time and chapter.time > chapter_time then
-							chapter_title = chapter.title
-							chapter_time = chapter.time
-							goto HOVER_CHAPTER_CONTINUE
-						end
-					end
-				end
-				::HOVER_CHAPTER_CONTINUE::
-			end
-		end
 		if (state.chapters and options.chapters ~= 'none') then
 			for i = #state.chapters, 1, -1 do
 				local chapter = state.chapters[i]
-				if hovered_seconds >= chapter.time and chapter.time > chapter_time then
+				if hovered_seconds >= chapter.time then
 					chapter_title = chapter.title
 					break
 				end
 			end
 		end
 		local time_formatted = mp.format_time(hovered_seconds)
-		local text_len = math.max(time_formatted:len(), chapter_title:len())
-		local box_half_width_estimate = text_width_estimate(text_len, this.font_size) / 2
+		local chapter_half_width_estimate = text_width_estimate(chapter_title:len(), this.font_size) / 2
+		local time_half_width_estimate = text_width_estimate(time_formatted:len(), this.font_size) / 2
 		ass:new_event()
 		ass:append('{\\blur0\\bord1\\shad0\\1c&H'..options.color_background_text..'\\3c&H'..options.color_background..'\\fn'..config.font..'\\fs'..this.font_size..bold_tag..'')
 		ass:append(ass_opacity(math.min(options.timeline_opacity + 0.1, 1)))
-		ass:pos(math.min(math.max(cursor.x, box_half_width_estimate), display.width - box_half_width_estimate), fay)
+		ass:pos(math.min(math.max(cursor.x, chapter_half_width_estimate), display.width - chapter_half_width_estimate), fay - this.font_size)
 		ass:an(2)
-		ass:append(chapter_title .. '\\N')
+		ass:append(chapter_title)
+		ass:new_event()
+		ass:append('{\\blur0\\bord1\\shad0\\1c&H'..options.color_background_text..'\\3c&H'..options.color_background..'\\fn'..config.font..'\\fs'..this.font_size..bold_tag..'')
+		ass:append(ass_opacity(math.min(options.timeline_opacity + 0.1, 1)))
+		ass:pos(math.min(math.max(cursor.x, time_half_width_estimate), display.width - time_half_width_estimate), fay)
+		ass:an(2)
 		ass:append(time_formatted)
 
 		-- Cursor line
@@ -2792,7 +2782,7 @@ for _, definition in ipairs(split(options.chapter_ranges, ' *,+ *')) do
 					if is_end then
 						if current_range == nil and uses_bof and not bof_used then
 							bof_used = true
-							start_range({time = 0, title = ''})
+							start_range({time = 0})
 						end
 						if current_range ~= nil then
 							end_range(chapter)
@@ -2813,7 +2803,7 @@ for _, definition in ipairs(split(options.chapter_ranges, ' *,+ *')) do
 
 		-- If there is an unfinished range and range type accepts eof, use it
 		if current_range ~= nil and uses_eof then
-			end_range({time = state.duration or infinity, title = ''})
+			end_range({time = state.duration or infinity})
 		end
 	end
 
@@ -2836,10 +2826,7 @@ function parse_chapters()
 		chapter_range.serialize(chapters)
 	end
 
-	-- Filter out chapters that were used as ranges
-	state.chapters = itable_remove(chapters, function(chapter)
-		return chapter._uosc_used_as_range_point == true
-	end)
+	state.chapters = chapters
 
 	request_render()
 end
