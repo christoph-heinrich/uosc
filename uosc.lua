@@ -548,8 +548,38 @@ function get_point_to_rectangle_proximity(point, rect)
 	return math.sqrt(dx*dx + dy*dy);
 end
 
-function text_width_estimate(letters, font_size)
-	return letters and letters * font_size * options.font_height_to_letter_width_ratio or 0
+function text_width_estimate(text, font_size)
+	if not text or text == "" then return 0 end
+
+	local text_width = 0
+	local char_width = font_size
+	local byte_len = #text
+	local byte_end = 0
+
+	for i = 1, byte_len do
+		if i <= byte_end then goto continue end
+
+		local char_width = char_width
+		local char_byte = string.byte(text, i)
+
+		local byte_count = 1;
+		if char_byte >= 192 and char_byte < 223 then
+			byte_count = 2
+		elseif char_byte >= 224 and char_byte < 239 then
+			byte_count = 3
+		elseif char_byte >= 240 and char_byte <= 247 then
+			byte_count = 4
+		end
+
+		if not (byte_count == 1) then char_width = char_width * 2 end
+
+		text_width = text_width + char_width
+		byte_end = i + byte_count - 1
+
+		::continue::
+	end
+
+	return text_width * options.font_height_to_letter_width_ratio
 end
 
 function opacity_to_alpha(opacity)
@@ -928,17 +958,20 @@ function Menu:open(items, open_item, opts)
 			-- Estimate width of a widest item
 			local estimated_max_width = 0
 			for _, item in ipairs(this.items) do
-				local item_text_length = ((item.title and item.title:len() or 0) + (item.hint and item.hint:len() or 0))
+				local item_text = item.title and item.title or ""
+				local item_text_hint = item.hint and item.hint or ""
 				local spacings_in_item = item.hint and 3 or 2
-				local estimated_width = text_width_estimate(item_text_length, this.font_size) + (this.item_content_spacing * spacings_in_item)
+				local estimated_width = text_width_estimate(item_text, this.font_size) +
+										text_width_estimate(item_text_hint, this.font_size) +
+										(this.item_content_spacing * spacings_in_item)
 				if estimated_width > estimated_max_width then
 					estimated_max_width = estimated_width
 				end
 			end
 
 			-- Also check menu title
-			local menu_title_length = this.title and this.title:len() or 0
-			local estimated_menu_title_width = text_width_estimate(menu_title_length, this.font_size)
+			local menu_title = this.title and this.title or ""
+			local estimated_menu_title_width = text_width_estimate(menu_title, this.font_size)
 			if estimated_menu_title_width > estimated_max_width then
 				estimated_max_width = estimated_menu_title_width
 			end
@@ -1689,8 +1722,8 @@ function render_timeline(this)
 			end
 		end
 		local time_formatted = mp.format_time(hovered_seconds)
-		local chapter_half_width_estimate = text_width_estimate(chapter_title:len(), this.font_size) / 2
-		local time_half_width_estimate = text_width_estimate(time_formatted:len(), this.font_size) / 2
+		local chapter_half_width_estimate = text_width_estimate(chapter_title, this.font_size) / 2
+		local time_half_width_estimate = text_width_estimate(time_formatted, this.font_size) / 2
 		ass:new_event()
 		ass:append('{\\blur0\\bord1\\shad0\\1c&H'..options.color_background_text..'\\3c&H'..options.color_background..'\\fn'..config.font..'\\fs'..this.font_size..bold_tag..'')
 		ass:append(ass_opacity(math.min(options.timeline_opacity + 0.1, 1)))
@@ -2100,7 +2133,7 @@ function render_menu(this)
 		local has_submenu = item.items ~= nil
 		local hint_width = 0
 		if item.hint then
-			hint_width = text_width_estimate(item.hint:len(), this.font_size) + this.item_content_spacing
+			hint_width = text_width_estimate(item.hint, this.font_size) + this.item_content_spacing
 		elseif has_submenu then
 			hint_width = icon_size + this.item_content_spacing
 		end
