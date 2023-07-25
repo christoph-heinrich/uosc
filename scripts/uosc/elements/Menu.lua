@@ -251,6 +251,9 @@ function Menu:update_dimensions()
 		menu.top = round(math.max((display.height - menu.height) / 2, title_height * 1.5))
 		menu.scroll_height = math.max(content_height - menu.height - self.item_spacing, 0)
 		menu.scroll_y = menu.scroll_y or 0
+		if menu.selected_index then
+			menu.selected_index = clamp(1, menu.selected_index, #menu.items)
+		end
 		self:scroll_to(menu.scroll_y, menu) -- clamps scroll_y to scroll limits
 	end
 
