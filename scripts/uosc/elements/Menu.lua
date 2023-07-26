@@ -186,6 +186,10 @@ function Menu:update(data)
 		local old_menu = self.by_id[menu.is_root and '__root__' or menu.id]
 		if old_menu then table_assign(menu, old_menu, {'selected_index', 'scroll_y', 'fling'}) end
 
+		if menu.selected_index then
+			menu.selected_index = clamp(1, menu.selected_index, #menu.items)
+		end
+
 		new_all[#new_all + 1] = menu
 		new_by_id[menu.is_root and '__root__' or menu.id] = menu
 	end
@@ -251,9 +255,6 @@ function Menu:update_dimensions()
 		menu.top = round(math.max((display.height - menu.height) / 2, title_height * 1.5))
 		menu.scroll_height = math.max(content_height - menu.height - self.item_spacing, 0)
 		menu.scroll_y = menu.scroll_y or 0
-		if menu.selected_index then
-			menu.selected_index = clamp(1, menu.selected_index, #menu.items)
-		end
 		self:scroll_to(menu.scroll_y, menu) -- clamps scroll_y to scroll limits
 	end
 
