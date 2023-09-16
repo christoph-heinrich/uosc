@@ -1,11 +1,13 @@
 ---@param data MenuData
----@param opts? {submenu?: string; mouse_nav?: boolean; on_close?: string | string[]}
+---@param opts? {submenu?: string; mouse_nav?: boolean; on_close?: string | string[]; on_search?: string | string[]}
 function open_command_menu(data, opts)
-	local function run_command(command)
+	local function run_command(command, value)
 		if type(command) == 'string' then
-			mp.command(command)
+			mp.command(value and command .. ' ' .. value or command)
 		else
 			---@diagnostic disable-next-line: deprecated
+			command = table_shallow_copy(command)
+			command[#command + 1] = value
 			mp.commandv(unpack(command))
 		end
 	end
@@ -14,6 +16,9 @@ function open_command_menu(data, opts)
 	if opts then
 		menu_opts.mouse_nav = opts.mouse_nav
 		if opts.on_close then menu_opts.on_close = function() run_command(opts.on_close) end end
+		if opts.on_search then
+			menu_opts.on_search = function(search_text) run_command(opts.on_search, search_text) end
+		end
 	end
 	local menu = Menu:open(data, run_command, menu_opts)
 	if opts and opts.submenu then menu:activate_submenu(opts.submenu) end
@@ -26,15 +31,32 @@ function toggle_menu_with_items(opts)
 	else open_command_menu({type = 'menu', items = config.menu_items}, opts) end
 end
 
+local function search_menu(menu, items, search_text)
+	menu:update_items(itable_filter(items, function(item)
+		return item.title:lower():find(search_text, 1, true) or
+			item.hint and item.hint:lower():find(search_text, 1, true)
+	end))
+end
+
 ---@param options {type: string; title: string; list_prop: string; active_prop?: string; serializer: fun(list: any, active: any): MenuDataItem[]; on_select: fun(value: any); on_move_item?: fun(from_index: integer, to_index: integer, submenu_path: integer[]); on_delete_item?: fun(index: integer, submenu_path: integer[])}
 function create_self_updating_menu_opener(options)
 	return function()
 		if Menu:is_open(options.type) then Menu:close() return end
 		local list = mp.get_property_native(options.list_prop)
 		local active = options.active_prop and mp.get_property_native(options.active_prop) or nil
+		local items, selected_index = options.serializer(list, active)
+		local search_text = ''
 		local menu
 
-		local function update() menu:update_items(options.serializer(list, active)) end
+		local function on_search(text)
+			search_text = text:lower()
+			search_menu(menu, items, search_text)
+		end
+
+		local function update()
+			items = options.serializer(list, active)
+			search_menu(menu, items, search_text)
+		end
 
 		local ignore_initial_list = true
 		local function handle_list_prop_change(name, value)
@@ -48,12 +70,10 @@ function create_self_updating_menu_opener(options)
 			else active = value update() end
 		end
 
-		local initial_items, selected_index = options.serializer(list, active)
-
 		-- Items and active_index are set in the handle_prop_change callback, since adding
 		-- a property observer triggers its handler immediately, we just let that initialize the items.
 		menu = Menu:open(
-			{type = options.type, title = options.title, items = initial_items, selected_index = selected_index},
+			{type = options.type, title = options.title, items = items, selected_index = selected_index},
 			options.on_select, {
 			on_open = function()
 				mp.observe_property(options.list_prop, 'native', handle_list_prop_change)
@@ -67,6 +87,7 @@ function create_self_updating_menu_opener(options)
 			end,
 			on_move_item = options.on_move_item,
 			on_delete_item = options.on_delete_item,
+			on_search = on_search,
 		})
 	end
 end
@@ -252,9 +273,17 @@ function open_file_navigation_menu(directory_path, handle_select, opts)
 		type = opts.type, title = opts.title or directory.basename .. path_separator, items = items,
 		selected_index = selected_index,
 	}
-	local menu_options = {on_open = opts.on_open, on_close = opts.on_close, on_back = handle_back}
 
-	return Menu:open(menu_data, open_path, menu_options)
+	local menu
+	local function on_search(search_text)
+		search_menu(menu, items, search_text:lower())
+	end
+	local menu_options = {
+		on_open = opts.on_open, on_close = opts.on_close, on_back = handle_back, on_search = on_search,
+	}
+
+	menu = Menu:open(menu_data, open_path, menu_options)
+	return menu
 end
 
 -- Opens a file navigation menu with Windows drives as items.

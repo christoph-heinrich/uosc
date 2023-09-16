@@ -4,7 +4,7 @@ local Element = require('elements/Element')
 ---@alias MenuData {type?: string; title?: string; hint?: string; keep_open?: boolean; separator?: boolean; items?: MenuDataItem[]; selected_index?: integer;}
 ---@alias MenuDataItem MenuDataValue|MenuData
 ---@alias MenuDataValue {title?: string; hint?: string; icon?: string; value: any; bold?: boolean; italic?: boolean; muted?: boolean; active?: boolean; keep_open?: boolean; separator?: boolean; selectable?: boolean; align?: 'left'|'center'|'right'}
----@alias MenuOptions {mouse_nav?: boolean; on_open?: fun(); on_close?: fun(); on_back?: fun(); on_move_item?: fun(from_index: integer, to_index: integer, submenu_path: integer[]); on_delete_item?: fun(index: integer, submenu_path: integer[])}
+---@alias MenuOptions {mouse_nav?: boolean; on_open?: fun(); on_close?: fun(); on_back?: fun(); on_move_item?: fun(from_index: integer, to_index: integer, submenu_path: integer[]); on_delete_item?: fun(index: integer, submenu_path: integer[]); on_search?: fun(search_text: string)}
 
 -- Internal data structure created from `Menu`.
 ---@alias MenuStack {id?: string; type?: string; title?: string; hint?: string; selected_index?: number; keep_open?: boolean; separator?: boolean; items: MenuStackItem[]; parent_menu?: MenuStack; submenu_path: integer[]; active?: boolean; width: number; height: number; top: number; scroll_y: number; scroll_height: number; title_width: number; hint_width: number; max_width: number; is_root?: boolean; fling?: Fling}
@@ -106,6 +106,7 @@ function Menu:init(data, callback, opts)
 	self.key_bindings = {}
 	self.is_being_replaced = false
 	self.is_closing, self.is_closed = false, false
+	self.search_text = nil
 	self.drag_last_y = nil
 	self.is_dragging = false
 
@@ -608,6 +609,50 @@ function Menu:on_end()
 	if self.current.selected_index > 0 then self:scroll_to_index(self.current.selected_index) end
 end
 
+function Menu:search_text_update(search_text)
+	self.search_text = search_text
+	request_render()
+	if self.opts.on_search then self.opts.on_search(search_text) end
+end
+
+function Menu:search_backspace()
+	local pos, search_text = #self.search_text - 1, self.search_text
+	while pos > 1 and search_text:byte(pos) >= 0x80 and search_text:byte(pos) <= 0xbf do
+		pos = pos - 1
+	end
+	self:search_text_update(search_text:sub(1, pos))
+end
+
+function Menu:search_text_input(info)
+	if info.key_text and (info.event == 'press' or info.event == 'down' or info.event == 'repeat')
+	then self:search_text_update(self.search_text .. info.key_text) end
+end
+
+function Menu:search_stop()
+	self:search_disable_key_bindings()
+	self:search_text_update('')
+	self.search_text = nil
+end
+
+function Menu:search()
+	self:add_key_binding('esc', 'menu-search-close', self:create_key_action('search_stop'))
+	self:add_key_binding('bs', 'menu-search-bs', self:create_key_action('search_backspace'), {repeatable = true})
+	self:add_key_binding('any_unicode', 'menu-search-unicode', self:create_key_action('search_text_input'), {repeatable = true, complex = true})
+	self.search_text = self.search_text or ''
+	request_render()
+end
+
+function Menu:search_disable_key_bindings()
+	local key_bindings = self.key_bindings
+	for i = #key_bindings, 1, -1 do
+		local key_binding = key_bindings[i]
+		if key_binding:find('^menu%-search%-') then
+			mp.remove_key_binding(key_binding)
+			key_bindings[i] = nil
+		end
+	end
+end
+
 function Menu:add_key_binding(key, name, fn, flags)
 	self.key_bindings[#self.key_bindings + 1] = name
 	mp.add_forced_key_binding(key, name, fn, flags)
@@ -644,6 +689,8 @@ function Menu:enable_key_bindings()
 	self:add_key_binding('home', 'menu-home', self:create_key_action('on_home'))
 	self:add_key_binding('end', 'menu-end', self:create_key_action('on_end'))
 	self:add_key_binding('del', 'menu-delete-item', self:create_key_action('delete_selected_item'))
+	self:add_key_binding('ctrl+f', 'menu-search1', self:create_key_action('search'))
+	self:add_key_binding('/', 'menu-search2', self:create_key_action('search'))
 end
 
 function Menu:disable_key_bindings()
@@ -654,8 +701,8 @@ end
 -- Wraps a function so that it won't run if menu is closing or closed.
 ---@param fn function()
 function Menu:create_action(fn)
-	return function()
-		if not self.is_closing and not self.is_closed then fn() end
+	return function(...)
+		if not self.is_closing and not self.is_closed then fn(...) end
 	end
 end
 
@@ -673,10 +720,10 @@ end
 ---@param name string
 ---@param modifiers? Modifiers
 function Menu:create_key_action(name, modifiers)
-	return self:create_action(function()
+	return self:create_action(function(...)
 		self.mouse_nav = false
 		self.modifiers = modifiers
-		self:maybe(name)
+		self:maybe(name, ...)
 		self.modifiers = nil
 	end)
 end
@@ -863,10 +910,17 @@ function Menu:render()
 			})
 
 			-- Title
-			ass:txt(ax + menu.width / 2, title_ay + (title_height / 2), 5, menu.ass_safe_title, {
-				size = self.font_size, bold = true, color = bg, wrap = 2, opacity = menu_opacity,
-				clip = '\\clip(' .. ax .. ',' .. title_ay .. ',' .. bx .. ',' .. ay .. ')',
-			})
+			if self.search_text then
+				ass:txt(bx - 4, title_ay + (title_height / 2), 6, ass_escape(self.search_text), {
+					size = self.font_size, bold = true, color = bg, wrap = 2, opacity = menu_opacity,
+					clip = '\\clip(' .. ax + 2 .. ',' .. title_ay .. ',' .. bx - 2 .. ',' .. ay .. ')',
+				})
+			else
+				ass:txt(ax + menu.width / 2, title_ay + (title_height / 2), 5, menu.ass_safe_title, {
+					size = self.font_size, bold = true, color = bg, wrap = 2, opacity = menu_opacity,
+					clip = '\\clip(' .. ax + 2 .. ',' .. title_ay .. ',' .. bx - 2 .. ',' .. ay .. ')',
+				})
+			end
 		end
 
 		-- Scrollbar
