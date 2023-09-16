@@ -422,6 +422,7 @@ Menu {
   selected_index?: integer;
   keep_open?: boolean;
   on_close: string | string[];
+  on_search: string | string[];
 }
 
 Item = Command | Submenu;
@@ -448,7 +449,7 @@ Command {
 }
 ```
 
-When `Command.value` is a string, it'll be passed to `mp.command(value)`. If it's a table (array) of strings, it'll be used as `mp.commandv(table.unpack(value))`. The same goes for `Menu.on_close`.
+When `Command.value` is a string, it'll be passed to `mp.command(value)`. If it's a table (array) of strings, it'll be used as `mp.commandv(table.unpack(value))`. The same goes for `Menu.on_close` and `Menu.on_search`. `Menu.on_search` additionally appends the current search string as the last parameter.
 
 `Menu.type` controls what happens when opening a menu when some other menu is already open. When the new menu type is different, it'll replace the currently opened menu. When it's the same, the currently open menu will simply be closed. This is used to implement toggling of menus with the same type.
 
